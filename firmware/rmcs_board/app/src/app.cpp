@@ -12,6 +12,9 @@
 #include "firmware/rmcs_board/app/src/spi/bmi088/temperature.hpp"
 #include "firmware/rmcs_board/app/src/timer/timer.hpp"
 #include "firmware/rmcs_board/app/src/uart/uart.hpp"
+#ifdef LIBRMCS_USB_FAULT_INJECT
+# include "firmware/rmcs_board/app/src/usb/fault_inject.hpp"
+#endif
 #include "firmware/rmcs_board/app/src/usb/vendor.hpp"
 #include "firmware/rmcs_board/app/src/utility/boot_mailbox.hpp"
 #include "firmware/rmcs_board/app/src/utility/interrupt_lock.hpp"
@@ -29,7 +32,9 @@ App::App() {
     dma_mgr_init();
     boot::BootMailbox::clear();
 
+#ifndef LIBRMCS_TEST_DISABLE_WATCHDOG
     watchdog::watchdog.init();
+#endif
 
     led::led.init();
     timer::timer.init();
@@ -54,13 +59,19 @@ App::App() {
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 [[noreturn]] void App::run() {
     while (true) {
+#ifdef LIBRMCS_USB_FAULT_INJECT
+        usb_fault_inject_poll();
+#endif
+
         tud_task();
         usb::vendor->try_transmit();
 
         for (auto& board_uart : uart::uart_array)
             board_uart->try_transmit();
         gpio::gpio->poll_periodic_input_samples();
+#ifndef LIBRMCS_TEST_DISABLE_WATCHDOG
         watchdog::watchdog->feed();
+#endif
     }
 }
 
