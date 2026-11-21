@@ -108,6 +108,19 @@ elseif(UNIX)
     target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
 endif()
 
+option(LIBRMCS_ENABLE_ETHERCAT "Build Linux SOEM EtherCAT transport" OFF)
+if(LIBRMCS_ENABLE_ETHERCAT)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "EtherCAT transport currently supports Linux only")
+    endif()
+    include(cmake/soem.cmake)
+    target_link_libraries(${PROJECT_NAME} PRIVATE librmcs_soem_backend)
+    install(TARGETS librmcs_soem_backend ARCHIVE DESTINATION lib)
+endif()
+if(LIBRMCS_ENABLE_ETHERCAT)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE LIBRMCS_ENABLE_ETHERCAT=1)
+endif()
+
 # Enable LTO optimization
 set_target_properties(${PROJECT_NAME} PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION TRUE

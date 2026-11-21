@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include <librmcs/board/common.hpp>
+#include <librmcs/board/ethercat_options.hpp>
 #include <librmcs/data/datas.hpp>
 #include <librmcs/export.hpp>
 
@@ -47,6 +48,8 @@ public:
         uint16_t usb_vid, int32_t usb_pid, std::string_view serial_filter,
         const board::AdvancedOptions& options, data::DataCallback& callback);
 
+    Handler(const board::EthercatOptions& options, data::DataCallback& callback);
+
     Handler(const Handler&) = delete;
     Handler& operator=(const Handler&) = delete;
     Handler(Handler&& other) noexcept;
@@ -55,6 +58,8 @@ public:
     ~Handler() noexcept;
 
     PacketBuilder start_transmit() noexcept;
+
+    [[nodiscard]] bool connected() const noexcept;
 
 private:
     class Impl;

@@ -9,6 +9,7 @@
 
 #include "core/src/protocol/constant.hpp"
 #include "librmcs/board/common.hpp"
+#include "librmcs/board/ethercat_options.hpp"
 
 namespace librmcs::host::transport {
 
@@ -68,6 +69,8 @@ public:
  */
 class Transport {
 public:
+    static std::unique_ptr<Transport> create_ethercat(const board::EthercatOptions& options);
+
     Transport() = default;
     virtual ~Transport() noexcept = default;
     Transport(const Transport&) = delete;
@@ -137,6 +140,9 @@ public:
      *   shared with other threads.
      */
     virtual void receive(std::function<void(std::span<const std::byte>)> callback) = 0;
+
+    // EtherCAT faults are latched; reconnect by creating a new board/session.
+    [[nodiscard]] virtual bool connected() const noexcept { return true; }
 };
 
 namespace usb {

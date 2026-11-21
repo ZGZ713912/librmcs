@@ -35,19 +35,28 @@ public:
     static constexpr size_t kSessionAckRetryCount = 5;
     static constexpr auto kSessionRefreshInterval = std::chrono::milliseconds{250};
 
-    explicit Impl(std::unique_ptr<transport::Transport> transport, data::DataCallback& callback)
+    explicit Impl(
+        std::unique_ptr<transport::Transport> transport, data::DataCallback& callback,
+        bool recoverable_fault = false)
         : callback_(callback)
         , deserializer_(*this)
         , expected_session_nonce_(generate_session_nonce())
-        , transport_(std::move(transport)) {
+        , transport_(std::move(transport))
+        , recoverable_fault_(recoverable_fault) {
         transport_->receive([this](std::span<const std::byte> buffer) {
             // Operating system automatically assembles the packet
             deserializer_.feed(buffer);
             deserializer_.finish_transfer();
         });
 
-        establish_session();
-        keepalive_thread_ = std::thread{[this] { keepalive_loop(); }};
+        try {
+            establish_session();
+            keepalive_thread_ = std::thread{[this] { keepalive_loop(); }};
+        } catch (...) {
+            // Stop transport callbacks before the deserializer and mutex unwind.
+            transport_.reset();
+            throw;
+        }
     }
 
     ~Impl() override {
@@ -60,6 +69,10 @@ public:
     }
 
     PacketBuilder start_transmit() { return PacketBuilder{transport_.get()}; }
+
+    [[nodiscard]] bool connected() const noexcept {
+        return session_established() && transport_->connected();
+    }
 
     bool can_deserialized_callback(
         core::protocol::FieldId id, const data::CanDataView& data) override {
@@ -265,6 +278,13 @@ private:
             try {
                 refresh_session();
             } catch (const std::exception& exception) {
+                if (recoverable_fault_) {
+                    session_established_.store(false, std::memory_order_relaxed);
+                    logging::get_logger().error(
+                        "EtherCAT session lost; recreate the board to reconnect: {}",
+                        exception.what());
+                    return;
+                }
                 logging::get_logger().error(
                     "Failed to refresh session: {}. Terminating...", exception.what());
                 std::terminate();
@@ -289,6 +309,7 @@ private:
     uint32_t expected_session_nonce_ = 0;
 
     std::unique_ptr<transport::Transport> transport_;
+    bool recoverable_fault_ = false;
 
     std::atomic<bool> stop_keepalive_{false};
     std::thread keepalive_thread_;
@@ -424,6 +445,11 @@ Handler::Handler(
     const board::AdvancedOptions& options, data::DataCallback& callback)
     : impl_(new Impl(
           transport::usb::create_transport(usb_vid, usb_pid, serial_filter, options), callback)) {}
+
+Handler::Handler(const board::EthercatOptions& options, data::DataCallback& callback)
+    : impl_(new Impl(transport::Transport::create_ethercat(options), callback, true)) {}
+
+bool Handler::connected() const noexcept { return impl_ && impl_->connected(); }
 
 Handler::Handler(Handler&& other) noexcept
     : impl_(std::exchange(other.impl_, nullptr)) {}
